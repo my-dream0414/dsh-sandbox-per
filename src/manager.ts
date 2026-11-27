@@ -23,7 +23,7 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
-  appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync,
+  appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync,
   symlinkSync, writeFileSync,
 } from 'node:fs'
 import { get } from 'node:http'
@@ -245,12 +245,31 @@ async function findFreePort(base: number): Promise<number> {
   throw new SandboxError(`dsh-dev-sandbox: no free port in ${base}..${base + 999}`)
 }
 
-/** Read a sandbox's persisted state, or null when absent. */
+/** Environment variables stripped when starting a credential-free verify mirror. */
+const SENSITIVE_ENV = /^(?:DEEPSEEK_|OPENAI_|ANTHROPIC_|AZURE_OPENAI_|GOOGLE_|AWS_|GITHUB_|COHERE_|GROQ_|MISTRAL_|_KEY$|_TOKEN$|_SECRET$|_PASSWORD$|_CREDENTIAL)/i
+
+/** Copy the host environment without known credential variables. */
+function cleanProcessEnv(): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {}
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!SENSITIVE_ENV.test(key)) out[key] = value
+  }
+  return out
+}
+
+/** Read a sandbox's persisted state, or null when absent/corrupt. */
 function readStateFile(home: string): SandboxState | null {
   const file = join(home, 'sandbox-state.json')
   if (!existsSync(file)) return null
   try {
-    return JSON.parse(readFileSync(file, 'utf8')) as SandboxState
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as Partial<SandboxState>
+    if (typeof parsed.name !== 'string' || parsed.name === '') return null
+    if (typeof parsed.pluginPath !== 'string') return null
+    if (typeof parsed.pluginName !== 'string') return null
+    if (!Number.isSafeInteger(parsed.port)) return null
+    if (parsed.pid !== null && !Number.isSafeInteger(parsed.pid)) return null
+    if (!['stopped', 'starting', 'running', 'exited', 'error'].includes(parsed.status ?? '')) return null
+    return parsed as SandboxState
   } catch {
     return null
   }
@@ -266,15 +285,24 @@ function profileModeOf(state: SandboxState): SandboxProfileMode {
  */
 export class SandboxManager {
   private readonly children = new Map<string, ChildProcess>()
+  /** Serialize lifecycle transitions per sandbox to avoid orphaned processes. */
+  private readonly operations = new Map<string, Promise<unknown>>()
   private readonly rings = new Map<string, string[]>()
   private readonly resourceCache = new Map<string, { pid: number | null; sampledAt: number; usage: SandboxResourceUsage }>()
   private readonly options: ManagerOptions
   private verificationSequence = 0
   private harness: HarnessInfo | undefined
-  private harnessError: string | null = null
 
   constructor(options: ManagerOptions) {
     this.options = options
+  }
+
+  /** Run lifecycle operations for one sandbox serially (queue, never concurrent). */
+  private serialize<T>(name: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.operations.get(name) ?? Promise.resolve()
+    const next = previous.then(task, task)
+    this.operations.set(name, next.then(() => undefined, () => undefined))
+    return next
   }
 
   /**
@@ -284,15 +312,10 @@ export class SandboxManager {
    * @throws {SandboxError} when no harness checkout can be located.
    */
   private harnessInfo(): HarnessInfo {
-    if (this.harnessError !== null) throw new SandboxError(this.harnessError)
     if (this.harness !== undefined) return this.harness
-    try {
-      this.harness = resolveHarness(this.options.harnessRoot)
-      return this.harness
-    } catch (error) {
-      this.harnessError = error instanceof Error ? error.message : String(error)
-      throw new SandboxError(this.harnessError)
-    }
+    const info = resolveHarness(this.options.harnessRoot)
+    this.harness = info
+    return info
   }
 
   /**
@@ -428,7 +451,9 @@ export class SandboxManager {
           ['-NoProfile', '-NonInteractive', '-Command', `(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).WorkingSet64`],
           { encoding: 'utf8', windowsHide: true, timeout: 3000 },
         )
-        const value = Number(String(result.stdout).trim())
+        const text = String(result.stdout).trim()
+        if (text === '') return null
+        const value = Number(text)
         return Number.isFinite(value) && value >= 0 ? value : null
       }
       if (process.platform === 'linux') {
@@ -480,9 +505,17 @@ export class SandboxManager {
     }
   }
 
-  /** Persist one sandbox's state file. */
+  /** Persist one sandbox's state file atomically (tmp + rename). */
   private writeState(name: string, state: SandboxState): void {
-    writeFileSync(join(this.homeOf(name), 'sandbox-state.json'), JSON.stringify(state, null, 2) + '\n')
+    const file = join(this.homeOf(name), 'sandbox-state.json')
+    const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
+    writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n')
+    try {
+      renameSync(tmp, file)
+    } catch (error) {
+      try { rmSync(tmp, { force: true }) } catch { /* best effort */ }
+      throw error
+    }
   }
 
   // ---------------------------------------------------------------- logs
@@ -663,7 +696,31 @@ export class SandboxManager {
   async verify(pluginPath: string, options: SandboxVerificationOptions = {}): Promise<SandboxCompatibilityVerification> {
     const checkedAt = new Date().toISOString()
     const profileMode = options.profileMode ?? 'clean'
-    const scan = this.scanPlugin(pluginPath)
+    let scan: PluginScan
+    try {
+      scan = this.scanPlugin(pluginPath)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return {
+        format: 'dsh-plugin-verification/v1',
+        kind: options.kind ?? (options.repository !== undefined && options.commit !== undefined
+          ? 'baseline-compatibility' : 'local-compatibility'),
+        repository: options.repository ?? null,
+        commit: options.commit ?? null,
+        checkedAt,
+        profileMode,
+        plugin: { name: null, version: null, sourceFingerprint: '' },
+        scan: {
+          path: resolve(pluginPath), name: null, version: null, bundlePatch: null,
+          hasBundle: false, hostBuilt: false, clientDeclared: false, clientBuilt: false,
+          buildScript: null, issues: [message],
+        },
+        profileBundles: [],
+        result: 'failed',
+        error: message,
+        logs: '',
+      }
+    }
     const sourceFingerprint = createHash('sha256')
       .update(readFileSync(join(scan.path, 'package.json'), 'utf8'))
       .digest('hex')
@@ -706,7 +763,7 @@ export class SandboxManager {
       profileBundles = created.profileBundles ?? []
       // Explicit false prevents the host's optional buildOnStart setting from
       // executing an untrusted package lifecycle during a market check.
-      await this.start(name, undefined, { build: false })
+      await this.start(name, undefined, { build: false, sanitizeEnv: true })
       logs = this.logs(name, 200) ?? ''
     } catch (caught) {
       error = caught instanceof Error ? caught.message : String(caught)
@@ -937,7 +994,12 @@ export class SandboxManager {
    * @returns the running summary.
    * @throws {SandboxError} when the sandbox is unknown or fails to become ready.
    */
-  async start(name: string, port?: number, options: { build?: boolean } = {}): Promise<SandboxSummary> {
+  async start(name: string, port?: number, options: { build?: boolean; sanitizeEnv?: boolean } = {}): Promise<SandboxSummary> {
+    return this.serialize(name, () => this.startUnlocked(name, port, options))
+  }
+
+  /** Implementation of start; callers must already hold the per-sandbox lock. */
+  private async startUnlocked(name: string, port: number | undefined, options: { build?: boolean; sanitizeEnv?: boolean }): Promise<SandboxSummary> {
     let state = this.get(name)
     if (state === null) {
       throw new SandboxError(`dsh-dev-sandbox: unknown sandbox ${JSON.stringify(name)}`)
@@ -967,7 +1029,7 @@ export class SandboxManager {
     this.pushLog(name, `[dsh-dev-sandbox] starting on port ${spawnPort} (harness ${root})\n`)
     const home = this.homeOf(name)
     const env: NodeJS.ProcessEnv = {
-      ...process.env,
+      ...(options.sanitizeEnv === true ? cleanProcessEnv() : process.env),
       DSH_HOME: home,
       DSH_TELEMETRY_DISABLED: '1',
       DSH_DEV_SANDBOX_NAME: name,
@@ -988,6 +1050,9 @@ export class SandboxManager {
         windowsHide: true,
       },
     )
+    if (this.children.has(name)) {
+      throw new SandboxError(`dsh-dev-sandbox: sandbox ${JSON.stringify(name)} is already starting`)
+    }
     this.children.set(name, child)
     const childPid = child.pid ?? null
     this.mutateState(name, {
@@ -999,6 +1064,12 @@ export class SandboxManager {
       lastError: null,
       url: null,
     })
+    let spawnError: string | null = null
+    child.on('error', (error) => {
+      spawnError = error.message
+      this.pushLog(name, `[dsh-dev-sandbox] spawn error: ${error.message}\n`)
+      if (this.children.get(name) === child) this.children.delete(name)
+    })
     child.stdout.on('data', (chunk: Buffer) => this.pushLog(name, chunk.toString()))
     child.stderr.on('data', (chunk: Buffer) => this.pushLog(name, chunk.toString()))
     child.on('exit', (code, signal) => {
@@ -1006,13 +1077,16 @@ export class SandboxManager {
       this.pushLog(name, `[dsh-dev-sandbox] process exited (code=${code} signal=${signal ?? 'none'})\n`)
       const current = readStateFile(home)
       if (current !== null && (current.status === 'running' || current.status === 'starting')) {
-        this.mutateState(name, { status: 'exited', pid: null, url: null })
+        this.mutateState(name, {
+          status: 'exited', pid: null, url: null, stoppedAt: new Date().toISOString(),
+        })
       }
     })
     try {
       await this.waitReady(spawnPort, this.options.readyTimeoutMs, () => {
+        if (spawnError !== null) return true
         const current = this.children.get(name)
-        return current === undefined || current.exitCode !== null
+        return current === undefined || current.exitCode !== null || current.signalCode !== null
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -1073,6 +1147,11 @@ export class SandboxManager {
    * @param name - sandbox name.
    */
   async stop(name: string): Promise<void> {
+    return this.serialize(name, () => this.stopUnlocked(name))
+  }
+
+  /** Implementation of stop; callers must already hold the per-sandbox lock. */
+  private async stopUnlocked(name: string): Promise<void> {
     const state = this.get(name)
     if (state === null) {
       throw new SandboxError(`dsh-dev-sandbox: unknown sandbox ${JSON.stringify(name)}`)
@@ -1088,11 +1167,13 @@ export class SandboxManager {
 
   /** Stop and delete a sandbox's whole home directory. */
   async destroy(name: string): Promise<void> {
-    await this.stop(name)
-    const home = this.homeOf(name)
-    if (existsSync(home)) rmSync(home, { recursive: true, force: true })
-    this.rings.delete(name)
-    this.resourceCache.delete(name)
+    return this.serialize(name, async () => {
+      await this.stopUnlocked(name)
+      const home = this.homeOf(name)
+      if (existsSync(home)) rmSync(home, { recursive: true, force: true })
+      this.rings.delete(name)
+      this.resourceCache.delete(name)
+    })
   }
 
   /** Patch one sandbox's persisted state and return the new summary. */
@@ -1105,12 +1186,20 @@ export class SandboxManager {
     return this.withResourceUsage(next)
   }
 
-  /** Stop child processes on host teardown. */
+  /** Stop child processes on host teardown, with the same force-kill fallback as stop(). */
   dispose(): void {
-    for (const child of this.children.values()) {
-      if (child.exitCode === null) child.kill('SIGTERM')
+    for (const [name, child] of [...this.children]) {
+      const pid = child.pid
+      if (pid === undefined || !this.pidAlive(pid)) {
+        this.children.delete(name)
+        continue
+      }
+      void this.terminateProcess(pid, child)
+        .catch(() => { /* teardown must never throw */ })
+        .finally(() => {
+          if (this.children.get(name) === child) this.children.delete(name)
+        })
     }
-    this.children.clear()
   }
 }
 

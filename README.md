@@ -64,13 +64,13 @@ dsh plugin --profile web add github:my-dream0414/dsh-sandbox-per
 ### 方式 B：本地源码热挂载（无需 pnpm）
 
 ```powershell
-# 1. 构建（在插件目录，使用 harness 的 tsdown）
-& E:\qwq\deepseek-harness\node_modules\.bin\tsdown.cmd -c E:\qwq\deepseek\dsh-dev-sandbox\tsdown.config.ts
+# 1. 构建（在插件目录）
+npm run build
 
 # 2. junction 到开发 profile 的 node_modules
 New-Item -ItemType Junction `
-  -Path "$env:USERPROFILE\.dsh\profiles\web\node_modules\@zp-home\dsh-dev-sandbox" `
-  -Target "E:\qwq\deepseek\dsh-dev-sandbox"
+  -Path "$env:USERPROFILE\.dsh\profiles\web\node_modules\@changwei5920\dsh-sandbox-per" `
+  -Target "<本插件目录绝对路径>"
 
 # 3. 在 profile 的 cordis.patch.yml 追加：
 #    - insert:
@@ -279,8 +279,13 @@ pnpm typecheck
   原生 harness 的兼容性；沙盒进程从当前 harness 检出启动，因此会继承该检出的源码状态。
 - 待测插件若有运行时依赖，需能在其目录解析（其自身 node_modules / 其所在 workspace）。
 - 沙盒控制路由仅接受回环请求；即使宿主 Web 服务绑定到非回环地址，远程请求也无法创建、构建或销毁本机沙盒。
-- 集成主机 API 会把宿主凭据注入沙盒进程环境；关闭 `inheritHostApi` 可让沙盒完全不带 key（但仍继承
-  宿主进程环境变量，无法做到完美清洗）。
+  DSH 2.3 中这些路由显式声明为匿名认证，因为真正的边界是回环校验，面板的同域请求不携带额外凭据。
+- 集成主机 API 会把宿主凭据注入沙盒进程环境；关闭 `inheritHostApi` 可让沙盒不显式注入 key。`sandbox_verify`
+  使用净化环境，会过滤已知的 `DEEPSEEK_*`/`OPENAI_*`/`*_TOKEN` 等凭据变量，但无法保证清除所有继承的环境变量。
+- **隔离级别**：本插件是**进程级 / 配置级**隔离（独立 `DSH_HOME`、端口、profile 与进程），不是操作系统安全沙箱。
+  它用于「插件测试不弄坏开发本体」，不适用于执行完全不可信代码。DSH 自身的 `dsh-sandbox-local` / Landlock /
+  Windows ACL 保护的是 Agent 命令执行的文件边界，与本插件的进程镜像互补而不互相替代。若需运行不可信插件，
+  请在容器（Docker/Podman）或 microVM（Firecracker/E2B 类）中再用本插件做镜像测试。
 
 ## 更新日志
 
@@ -289,6 +294,8 @@ pnpm typecheck
 - 适配 DSH 2.3-alpha.2：宿主 peer 依赖升级到 `0.2.3-alpha.2` / `cordis 4.2.0-alpha.1` / `schemastery 3.20.0-alpha.1` 版本线，修复插件安装器的版本兼容拦截。
 - 移除客户端对 DSH 2.3 中已废弃的 `@deepseek-ai/dsh-client-runtime` 注入声明，保留 `dsh-client-locale`。
 - 包名调整为 `@changwei5920/dsh-sandbox-per`，仓库迁移至 `my-dream0414/dsh-sandbox-per`。
+- v0.1.2 健壮性：spawn 失败不再击穿宿主；生命周期按沙盒串行化，消除并发启动孤儿进程；状态原子写入与校验；
+  `verify` 使用凭据净化环境；DSH 2.3 路由显式匿名认证；修正工具输出 schema、日志默认行数与进度状态时间。
 
 ### v0.1.0（2026-08-16）
 

@@ -86,7 +86,13 @@ async function dispatch(req: IncomingMessage, res: ServerResponse, manager: Sand
     json(res, 403, { error: 'dsh-dev-sandbox routes accept loopback requests only' })
     return
   }
-  const url = new URL(req.url ?? '/', 'http://localhost')
+  let url: URL
+  try {
+    url = new URL(req.url ?? '/', 'http://localhost')
+  } catch {
+    json(res, 400, { error: 'invalid request URL' })
+    return
+  }
   // Normalize duplicate slashes: the browser half historically joined the
   // prefix with leading-slash actions, and a stray client must not 404.
   const path = url.pathname.replace(/\/{2,}/g, '/')
@@ -116,7 +122,8 @@ async function dispatch(req: IncomingMessage, res: ServerResponse, manager: Sand
         if (req.method !== 'GET') return method(res)
         const name = stringField(query.get('name'))
         if (name === undefined) return bad(res, 'name is required')
-        const tail = Math.min(5000, Math.max(1, numberField(Number(query.get('tail'))) ?? 200))
+        const rawTail = query.get('tail')
+        const tail = Math.min(5000, Math.max(1, rawTail === null ? 200 : numberField(Number(rawTail)) ?? 200))
         const lines = manager.logs(name, tail)
         if (lines === null) return json(res, 404, { error: `unknown sandbox ${JSON.stringify(name)}` })
         json(res, 200, { lines })
@@ -259,6 +266,15 @@ export function registerRoutes(ctx: { webServer: { register(route: unknown): () 
   return ctx.webServer.register({
     kind: 'prefix',
     path: ROUTES_PREFIX,
-    handler: (req: IncomingMessage, res: ServerResponse) => void dispatch(req, res, manager),
+    // These are local management routes: the loopback check inside dispatch()
+    // is the actual boundary. DSH 2.3 defaults to `required`, which would
+    // break the same-origin panel unless it carried extra auth credentials.
+    auth: 'anonymous',
+    handler: (req: IncomingMessage, res: ServerResponse) => {
+      void dispatch(req, res, manager).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error)
+        if (!res.headersSent) json(res, 500, { error: message })
+      })
+    },
   })
 }

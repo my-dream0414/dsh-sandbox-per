@@ -190,7 +190,11 @@ export function sandboxTools(manager: SandboxManager): ReturnType<typeof defineT
             ...profileMode !== undefined ? { profileMode } : {},
           })
         } else if (profileMode !== undefined) {
-          manager.create(args.name, existing.pluginPath === '' ? undefined : existing.pluginPath, { profileMode })
+          manager.create(args.name, existing.pluginPath === '' ? undefined : existing.pluginPath, {
+            profileMode,
+            inheritHostApi: existing.inheritHostApi,
+            inheritHostModel: existing.inheritHostModel,
+          })
         }
         if (args.build === true) {
           const state = manager.get(args.name)

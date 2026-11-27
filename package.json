@@ -1,7 +1,7 @@
 {
   "name": "@changwei5920/dsh-sandbox-per",
   "description": "DSH plugin developer sandbox: spawn isolated DeepSeek Harness web mirror instances (separate DSH_HOME, separate port, separate profile) that mount the plugin under development — with optional host API/model inheritance so the mirror can chat directly. GUI panel + agent tools (sandbox_list/start/stop/destroy/logs/build).",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
