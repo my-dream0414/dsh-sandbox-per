@@ -1,5 +1,5 @@
 {
-  "name": "@zp-home/dsh-dev-sandbox",
+  "name": "@changwei5920/dsh-sandbox-per",
   "description": "DSH plugin developer sandbox: spawn isolated DeepSeek Harness web mirror instances (separate DSH_HOME, separate port, separate profile) that mount the plugin under development — with optional host API/model inheritance so the mirror can chat directly. GUI panel + agent tools (sandbox_list/start/stop/destroy/logs/build).",
   "version": "0.1.1",
   "type": "module",
@@ -55,13 +55,16 @@
     "developer-tools"
   ],
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/zp-home/dsh-dev-sandbox.git"
+    "url": "https://github.com/my-dream0414/dsh-sandbox-per.git"
   },
-  "homepage": "https://github.com/zp-home/dsh-dev-sandbox",
+  "homepage": "https://github.com/my-dream0414/dsh-sandbox-per",
   "bugs": {
-    "url": "https://github.com/zp-home/dsh-dev-sandbox/issues"
+    "url": "https://github.com/my-dream0414/dsh-sandbox-per/issues"
   },
   "scripts": {
     "build": "tsdown",

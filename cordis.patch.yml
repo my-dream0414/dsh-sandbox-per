@@ -2,7 +2,7 @@
 # profile roster. Applied as a profile bundle layer (the `dsh.bundle.patch`
 # manifest field). Install with:
 #
-#   dsh plugin --profile web add github:zp-home/dsh-dev-sandbox
+#   dsh plugin --profile web add github:my-dream0414/dsh-sandbox-per
 #
 # or from a local source checkout without pnpm:
 #
@@ -17,7 +17,7 @@
 # in the host process (sandbox lifecycle manager + /api/dsh-dev-sandbox
 # routes + sandbox_* agent tools), and the `dsh.client` declaration in
 # package.json makes the browser half (exports "./client", served at
-# /plugins/@zp-home/dsh-dev-sandbox/client.js) load in the web GUI.
+# /plugins/@changwei5920/dsh-sandbox-per/client.js) load in the web GUI.
 - insert:
     - id: dev-sandbox
-      name: '@zp-home/dsh-dev-sandbox'
+      name: '@changwei5920/dsh-sandbox-per'

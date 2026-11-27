@@ -1,5 +1,5 @@
 /**
- * tsdown config for @zp-home/dsh-dev-sandbox.
+ * tsdown config for @changwei5920/dsh-sandbox-per.
  *
  * Two artifacts, mirroring the harness client-bundle contract:
  *  1. lib/index.js  — node half (host plugin), ESM, all @deepseek-ai/* and
@@ -12,7 +12,7 @@
  */
 import { defineConfig } from 'tsdown'
 
-const ID = '@zp-home/dsh-dev-sandbox'
+const ID = '@changwei5920/dsh-sandbox-per'
 
 /** The shell's frozen module table (packages/client/web/src/platform.ts). */
 const PLATFORM_MODULES = [

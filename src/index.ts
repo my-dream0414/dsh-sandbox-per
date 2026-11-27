@@ -1,5 +1,5 @@
 /**
- * @zp-home/dsh-dev-sandbox — DSH plugin developer sandbox.
+ * @changwei5920/dsh-sandbox-per — DSH plugin developer sandbox.
  *
  * Host half: a lifecycle manager for isolated dsh web instances ("business
  * mirrors"). Each sandbox gets its own DSH_HOME, its own web profile that
@@ -10,7 +10,7 @@
  *
  * The browser half (`./client`) renders a sidebar entry + panel for driving
  * the sandboxes from the GUI.
- * @module @zp-home/dsh-dev-sandbox
+ * @module @changwei5920/dsh-sandbox-per
  */
 
 import { homedir } from 'node:os'

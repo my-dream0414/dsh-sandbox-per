@@ -1,10 +1,10 @@
-# @zp-home/dsh-dev-sandbox · DSH 插件开发沙盒
+# @changwei5920/dsh-sandbox-per · DSH 插件开发沙盒
 
 [![dsh-recommend](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fzp-home%2Fdsh-recommend%2Fmain%2Fdata%2Fbadges%2Fzp-home__dsh-dev-sandbox.certified.json)](https://github.com/zp-home/dsh-recommend)
 [![dsh score](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fzp-home%2Fdsh-recommend%2Fmain%2Fdata%2Fbadges%2Fzp-home__dsh-dev-sandbox.json)](https://github.com/zp-home/dsh-recommend)
-[![license](https://img.shields.io/github/license/zp-home/dsh-dev-sandbox?style=flat-square)](LICENSE)
+[![license](https://img.shields.io/github/license/my-dream0414/dsh-sandbox-per?style=flat-square)](LICENSE)
 [![topic dsh-plugin](https://img.shields.io/badge/topic-dsh--plugin-4D6BFE?style=flat-square)](https://github.com/topics/dsh-plugin)
-[![stars](https://img.shields.io/github/stars/zp-home/dsh-dev-sandbox?style=flat-square)](https://github.com/zp-home/dsh-dev-sandbox)
+[![stars](https://img.shields.io/github/stars/my-dream0414/dsh-sandbox-per?style=flat-square)](https://github.com/my-dream0414/dsh-sandbox-per)
 
 > **English**: A developer sandbox for [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness)
 > plugins. One click spawns a fully **isolated** dsh web instance — its own `DSH_HOME`, its own port, its
@@ -58,7 +58,7 @@
 
 ```sh
 # 在 harness 检出根目录（或任意目录）执行：
-dsh plugin --profile web add github:zp-home/dsh-dev-sandbox
+dsh plugin --profile web add github:my-dream0414/dsh-sandbox-per
 ```
 
 ### 方式 B：本地源码热挂载（无需 pnpm）
@@ -75,7 +75,7 @@ New-Item -ItemType Junction `
 # 3. 在 profile 的 cordis.patch.yml 追加：
 #    - insert:
 #        - id: dev-sandbox
-#          name: '@zp-home/dsh-dev-sandbox'
+#          name: '@changwei5920/dsh-sandbox-per'
 ```
 
 然后重启一次开发实例，刷新浏览器即可看到侧边栏「沙盒」。
@@ -239,7 +239,7 @@ sandbox_stop name=test-my-plugin
 ```yaml
 - insert:
     - id: dev-sandbox
-      name: '@zp-home/dsh-dev-sandbox'
+      name: '@changwei5920/dsh-sandbox-per'
       config:
         basePort: 5000
         buildOnStart: true
@@ -288,6 +288,7 @@ pnpm typecheck
 
 - 适配 DSH 2.3-alpha.2：宿主 peer 依赖升级到 `0.2.3-alpha.2` / `cordis 4.2.0-alpha.1` / `schemastery 3.20.0-alpha.1` 版本线，修复插件安装器的版本兼容拦截。
 - 移除客户端对 DSH 2.3 中已废弃的 `@deepseek-ai/dsh-client-runtime` 注入声明，保留 `dsh-client-locale`。
+- 包名调整为 `@changwei5920/dsh-sandbox-per`，仓库迁移至 `my-dream0414/dsh-sandbox-per`。
 
 ### v0.1.0（2026-08-16）
 
